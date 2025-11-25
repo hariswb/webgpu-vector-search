@@ -3,25 +3,8 @@ import {
   ErrorWebGPUCompute,
   ErrorWebGPUInit,
 } from "./errors";
-import { InternalEntry, ShardTopK, TopKResult } from "./types";
 
-interface ShardRecord {
-  shardIndex: number;
-  byteSize: number;
-  count: number;
-  dim: number;
-  gpuBuffer: GPUBuffer;
-}
-
-interface VecScore {
-  idx: number;
-  score: number;
-}
-
-interface ShardScores {
-  shardIdx: number;
-  scores: VecScore[];
-}
+import { ShardRecord, VecScore, ShardScores } from "./types";
 
 export class GpuSimilarityEngine {
   private adapter: GPUAdapter | null = null;
@@ -248,8 +231,8 @@ export class GpuSimilarityEngine {
     const outBuffer = this.device.createBuffer({
       label: "Out buffer",
       size: this.maxShardCount * 4,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-    })
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
 
     // Bind group
     const bindGroup = this.device.createBindGroup({
@@ -299,7 +282,7 @@ export class GpuSimilarityEngine {
 
     // Cleanup ephemeral outBuffer
     outBuffer.destroy();
-    
+
     return scores;
   }
 
@@ -332,7 +315,6 @@ export class GpuSimilarityEngine {
   }
 
   async destroyBuffers() {
-
     for (const [key, record] of this.shardRecords.entries()) {
       try {
         record.gpuBuffer.destroy();
@@ -371,7 +353,6 @@ export class GpuSimilarityEngine {
           Message: ${(e as Error).message}`
       );
     }
-
   }
 
   private isQueryValid(query: Float32Array) {

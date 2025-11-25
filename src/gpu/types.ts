@@ -1,17 +1,17 @@
-export type InternalEntry = { index: number; score: number; shardId?: number };
-export type TopKResult = { index: number; score: number; shardId?: number };
-export interface ShardTopK {
+export interface ShardRecord {
   shardIndex: number;
-  indices: number[];         // local indices inside shard
-  scores: number[];          // cosine scores
+  byteSize: number;
+  count: number;
+  dim: number;
+  gpuBuffer: GPUBuffer;
 }
 
-export type ShardGPURecord = {
-  shardIndex: number;
-  count: number;
-  startIndex: number; // global start index
-  byteSize: number;
-  gpuBuffer: GPUBuffer;
-  bindGroup: GPUBindGroup;
-  lastUsed: number; // timestamp for LRU
-};
+export interface VecScore {
+  idx: number;
+  score: number;
+}
+
+export interface ShardScores {
+  shardIdx: number;
+  scores: VecScore[];
+}

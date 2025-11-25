@@ -1,9 +1,8 @@
 import { expect, test } from "vitest";
-import { GpuSimilarityEngine } from "../gpu/gpuSimilarityEngineLatest";
+import { GpuSimilarityEngine } from "../gpu/engine";
 import { StoreGithubPage } from "../stores/storeGithubPage";
 import { buildAcronymRegex, vectorizeQuery } from "../tfIdf";
 import { SearchResultItem } from "../pipeline";
-import { ErrorWebGPUBuffer } from "../gpu/errors";
 
 const store = new StoreGithubPage(
   "https://hariswb.github.io/indonesian-news-2024-2025"
@@ -37,10 +36,12 @@ test("Pipeline 2", async () => {
   await testGpuSimilarity("Timnas indonesia", 10);
 });
 
+gpu.destroyBuffers();
+
 export async function testGpuSimilarity(query: string, topK: number) {
   const qvec = await getQVec(query);
 
-  // Map<shard index, shard's start index> 
+  // Map<shard index, shard's start index>
   const shardStartIdxMap: Map<number, number> = new Map();
 
   // Create buffer records
@@ -74,9 +75,11 @@ export async function testGpuSimilarity(query: string, topK: number) {
   }
   globalResults.sort((a, b) => b.score - a.score);
 
-  const titles = await store.fetchMetadataBatch(globalResults.slice(0,10).map((o) => o.globalIndex));
+  const titles = await store.fetchMetadataBatch(
+    globalResults.slice(0, 10).map((o) => o.globalIndex)
+  );
 
-  console.log(titles.map(t=>t.title))
+  console.log(titles.map((t) => t.title));
 }
 
 async function getQVec(query: string) {
