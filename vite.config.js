@@ -13,6 +13,9 @@ export default defineConfig({
   },
   plugins: [react(), tailwindcss()],
   test: {
+    include: [
+      'src/test/pipelineLatest.test.ts'
+    ],
     browser: {
       provider: playwright({
         launchOptions: {
