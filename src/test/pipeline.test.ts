@@ -1,15 +1,49 @@
-import { test } from "vitest";
-import { VectorSearchPipeline } from "../pipeline";
+import { test, expect } from "vitest";
+import { VectorSearchPipeline, DataIndexStream } from "../pipeline";
 
-const pipeline = new VectorSearchPipeline("https://hariswb.github.io/indonesian-news-2024-2025",10)
-await pipeline.init()
+const topK = 10
 
-test('Pipeline 0', async ()=>{
-    const result = await pipeline.compute("Krisis ekonomi")
-    console.log("Result",result)
-})
+const pipeline = new VectorSearchPipeline(
+  "https://hariswb.github.io/indonesian-news-2024-2025",
+  topK
+);
+await pipeline.init();
 
-test('Pipeline 1', async ()=>{
-    const result = await pipeline.compute("Demonstrasi ricuh")
-    console.log("Result",result)
-})
+test("Compute and out result", async () => {
+  const sortedSearchResults = await pipeline.compute("Demonstrasi ricuh");
+
+  expect(sortedSearchResults).toBeInstanceOf(Array);
+
+  const streamDataIdx = new DataIndexStream(sortedSearchResults)
+
+  const topIdx = streamDataIdx.next(topK)
+
+  const data = await pipeline.getResults(topIdx)
+
+  expect(data).toHaveLength(topK);
+
+  for (let i = 0; i < topK; i++) {
+    expect(data[i]).toHaveProperty("title");
+  }
+});
+
+test("Compute and out result stream", async () => {
+  const sortedSearchResults = await pipeline.compute("Keracunan MBG");
+
+  expect(sortedSearchResults).toBeInstanceOf(Array);
+
+  const streamDataIdx = new DataIndexStream(sortedSearchResults)
+
+  const dataFirst = await pipeline.getResults(streamDataIdx.next(topK))
+  expect(dataFirst).toHaveLength(topK);
+  for (let i = 0; i < topK; i++) {
+    expect(dataFirst[i]).toHaveProperty("title");
+  }
+
+  const dataSecond = await pipeline.getResults(streamDataIdx.next(topK))
+  expect(dataSecond).toHaveLength(topK);
+  for (let i = 0; i < topK; i++) {
+    expect(dataSecond[i]).toHaveProperty("title");
+  }
+});
+

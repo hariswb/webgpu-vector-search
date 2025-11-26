@@ -3,7 +3,7 @@ import { GpuSimilarityEngine } from "./gpu/engine";
 import { QueryVectorizer } from "./utils/tfIdf";
 import { ShardRecord } from "./gpu/types";
 
-export interface SearchResultItem {
+export interface SortedSearchResult {
   globalIndex: number;
   score: number;
 }
@@ -12,7 +12,7 @@ export class VectorSearchPipeline {
   private resultK: number;
   private storeUrl: string;
 
-  private store: StoreGithubPage | null = null;
+  private store: StoreGithubPage;
   private gpu: GpuSimilarityEngine | null = null;
   private queryVectorizer: QueryVectorizer | null = null;
 
@@ -28,10 +28,6 @@ export class VectorSearchPipeline {
   }
 
   async init() {
-    if (!this.store) {
-      throw new Error("Store not initialized");
-    }
-
     // Init Store
     await this.store.loadManifest();
     await this.store.loadMetadataIndex();
@@ -75,19 +71,26 @@ export class VectorSearchPipeline {
     );
   }
 
-  async compute(query: string): Promise<MetadataObject[] | undefined> {
+  async getResults(
+    sortedSearchIdx: number[]
+  ): Promise<MetadataObject[]> {
+    const titles = await this.store.fetchMetadataBatch(
+      sortedSearchIdx
+    );
+    return titles;
+  }
+
+  async compute(query: string): Promise<number[]> {
     if (!this.gpu || !this.store || !this.queryVectorizer) {
       throw new Error("Pipeline not initialized");
     }
 
     const qvec = this.queryVectorizer.vectorize(query);
 
-    const globalResults: SearchResultItem[] = [];
+    const globalResults: SortedSearchResult[] = [];
 
     for (let i = 0; i < this.gpu.shardRecords.size; i++) {
       const shardRec = this.gpu.shardRecords.get(i);
-
-      console.log(shardRec)
 
       if (!shardRec) break;
 
@@ -107,13 +110,23 @@ export class VectorSearchPipeline {
         }
       }
     }
-
-    globalResults.sort((a, b) => b.score - a.score);
-
-    const titles = await this.store.fetchMetadataBatch(
-      globalResults.slice(0, 10).map((o) => o.globalIndex)
-    );
-
-    return titles;
+    return globalResults.sort((a, b) => b.score - a.score).map(o=>o.globalIndex);
   }
 }
+
+export class DataIndexStream {
+  private index = 0;
+
+  constructor(private data: number[]) {}
+
+  next(k: number): number[] {
+    const slice = this.data.slice(this.index, this.index + k);
+    this.index += slice.length; // do NOT exceed bounds
+    return slice;
+  }
+
+  hasMore(): boolean {
+    return this.index < this.data.length;
+  }
+}
+
