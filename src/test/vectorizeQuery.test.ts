@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { StoreGithubPage} from "../stores/storeGithubPage";
-import { buildAcronymRegex, vectorizeQuery } from "../tfIdf";
+import { buildAcronymRegex, vectorizeQuery } from "../utils/tfIdf";
 
 test("Vectorize Query", async () => {
   const qvec = await testVectorizeQuery("BBM naik hari ini apakah berdampak?");

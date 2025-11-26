@@ -1,5 +1,7 @@
-import { StoreGithubPage } from "./stores/storeGithubPage";
-import { GpuSimilarityEngine } from "./gpu/gpuSimilarityEngine";
+import { MetadataObject, StoreGithubPage } from "./stores/storeGithubPage";
+import { GpuSimilarityEngine } from "./gpu/engine";
+import { QueryVectorizer } from "./utils/tfIdf";
+import { ShardRecord } from "./gpu/types";
 
 export interface SearchResultItem {
   globalIndex: number;
@@ -7,60 +9,111 @@ export interface SearchResultItem {
 }
 
 export class VectorSearchPipeline {
-  private store: StoreGithubPage;
-  private gpu: GpuSimilarityEngine;
+  private resultK: number;
+  private storeUrl: string;
 
-  constructor(store: StoreGithubPage, gpu: GpuSimilarityEngine) {
-    this.store = store;
-    this.gpu = gpu;
+  private store: StoreGithubPage | null = null;
+  private gpu: GpuSimilarityEngine | null = null;
+  private queryVectorizer: QueryVectorizer | null = null;
+
+  private shardStartIdxMap: Map<ShardRecord["shardIndex"], number>;
+
+  constructor(storeUrl: string, resultK: number) {
+    this.resultK = resultK;
+    this.storeUrl = storeUrl;
+
+    this.store = new StoreGithubPage(this.storeUrl);
+
+    this.shardStartIdxMap = new Map();
   }
 
-  async computeAllShardsTopK(
-    query: Float32Array,
-    topK: number
-  ): Promise<SearchResultItem[]> {
+  async init() {
+    if (!this.store) {
+      throw new Error("Store not initialized");
+    }
+
+    // Init Store
+    await this.store.loadManifest();
+    await this.store.loadMetadataIndex();
     const manifest = this.store.getManifest();
+
     const dim = manifest.dim;
+    const maxShardCount = Math.max(
+      ...manifest.shards.map((shard) => shard.count)
+    );
+
+    // Init WebGPU Engine
+    this.gpu = new GpuSimilarityEngine(maxShardCount, dim);
+    await this.gpu.init();
+
+    // Create buffer records
+    let globalIdx = 0;
+    for (let i = 0; i < manifest.shards.length; i++) {
+      const shardInfo = manifest.shards[i];
+      const vectors = await this.store.loadShard(i); // Float32Array
+      await this.gpu.createBufferRecord(
+        i,
+        vectors,
+        manifest.dim,
+        shardInfo.count
+      );
+      this.shardStartIdxMap.set(i, globalIdx);
+      globalIdx += shardInfo.count;
+    }
+
+    // Init Query Vectorizer
+    const vocab = await this.store.loadVocab();
+    const idf = await this.store.loadIdf();
+    const stopwords = await this.store.loadStopwords();
+    const acronymDict = await this.store.loadAcronyms();
+
+    this.queryVectorizer = new QueryVectorizer(
+      vocab,
+      idf,
+      acronymDict,
+      stopwords
+    );
+  }
+
+  async compute(query: string): Promise<MetadataObject[] | undefined> {
+    if (!this.gpu || !this.store || !this.queryVectorizer) {
+      throw new Error("Pipeline not initialized");
+    }
+
+    const qvec = this.queryVectorizer.vectorize(query);
 
     const globalResults: SearchResultItem[] = [];
 
-    for (let s = 0; s < manifest.shards.length; s++) {
-      console.log(`Processing shard ${s}...`);
+    for (let i = 0; i < this.gpu.shardRecords.size; i++) {
+      const shardRec = this.gpu.shardRecords.get(i);
 
-      const shardInfo = manifest.shards[s];
+      console.log(shardRec)
 
-      // Load shard vectors
-      const vectors = await this.store.loadShard(s);
+      if (!shardRec) break;
 
-      // Compute per-shard top-K
-      const shardTop = await this.gpu.computeTopKForShard(
-        query,
-        vectors,
-        dim,
-        shardInfo.count,
-        topK
+      const shardScores = await this.gpu.computeTopKFromShard(
+        shardRec.shardIndex,
+        qvec,
+        this.resultK
       );
 
-      // Fill shardIndex
-      shardTop.shardIndex = s;
-
-      // Convert local shard index -> global vector index
-      for (let i = 0; i < shardTop.indices.length; i++) {
-        const localIdx = shardTop.indices[i];
-        const score = shardTop.scores[i];
-
-        const globalIdx = shardInfo.start_index + localIdx;
-
-        globalResults.push({
-          globalIndex: globalIdx,
-          score,
-        });
+      const shardStartIdx = this.shardStartIdxMap.get(shardRec.shardIndex);
+      if (shardStartIdx) {
+        for (const score of shardScores.scores) {
+          globalResults.push({
+            globalIndex: shardStartIdx + score.idx,
+            score: score.score,
+          });
+        }
       }
     }
 
-    // Merge across all shards
     globalResults.sort((a, b) => b.score - a.score);
 
-    return globalResults.slice(0, topK);
+    const titles = await this.store.fetchMetadataBatch(
+      globalResults.slice(0, 10).map((o) => o.globalIndex)
+    );
+
+    return titles;
   }
 }
