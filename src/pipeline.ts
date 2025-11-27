@@ -71,12 +71,19 @@ export class VectorSearchPipeline {
     );
   }
 
-  async getResults(
-    sortedSearchIdx: number[]
-  ): Promise<MetadataObject[]> {
-    const titles = await this.store.fetchMetadataBatch(
-      sortedSearchIdx
-    );
+  isReady(): boolean {
+    try {
+      if (!this.store.getManifest()) return false;
+      if (!this.gpu?.shardRecords) return false;
+      if (!this.queryVectorizer) return false;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async getResults(sortedSearchIdx: number[]): Promise<MetadataObject[]> {
+    const titles = await this.store.fetchMetadataBatch(sortedSearchIdx);
     return titles;
   }
 
@@ -97,7 +104,7 @@ export class VectorSearchPipeline {
       const shardScores = await this.gpu.computeTopKFromShard(
         shardRec.shardIndex,
         qvec,
-        this.resultK
+        shardRec.count
       );
 
       const shardStartIdx = this.shardStartIdxMap.get(shardRec.shardIndex);
@@ -110,7 +117,15 @@ export class VectorSearchPipeline {
         }
       }
     }
-    return globalResults.sort((a, b) => b.score - a.score).map(o=>o.globalIndex);
+
+    return globalResults
+      .sort((a, b) => b.score - a.score)
+      .map((o) => o.globalIndex);
+  }
+
+  async cleanUp(){
+    await this.gpu?.destroyBuffers()
+    this.gpu = null
   }
 }
 
@@ -129,4 +144,3 @@ export class DataIndexStream {
     return this.index < this.data.length;
   }
 }
-
