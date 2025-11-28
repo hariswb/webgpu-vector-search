@@ -9,7 +9,6 @@ export interface SortedSearchResult {
 }
 
 export class VectorSearchPipeline {
-  private resultK: number;
   private storeUrl: string;
 
   private store: StoreGithubPage;
@@ -18,8 +17,7 @@ export class VectorSearchPipeline {
 
   private shardStartIdxMap: Map<ShardRecord["shardIndex"], number>;
 
-  constructor(storeUrl: string, resultK: number) {
-    this.resultK = resultK;
+  constructor(storeUrl: string) {
     this.storeUrl = storeUrl;
 
     this.store = new StoreGithubPage(this.storeUrl);
