@@ -292,16 +292,18 @@ Why Range Requests Help in This Demo
 
 ## Performance
 
-Below are rough performance measurements from the demo environment:
+Using vitest's bench, I test some processes involving the processes in the pipeline. Checkout `src/test/pipeline.bench.ts`.
 
-| Component                               | Approx. Time |
-|----------------------------------------|---------------|
-| Load & upload vector shards to GPU     | ~120–180 ms   |
-| TF-IDF vectorization of query          | ~1–3 ms       |
-| GPU similarity compute (90k × 1000 fp32) | ~3–6 ms       |
-| Readback of similarity scores          | ~1–2 ms       |
-| CPU Top-K selection (K = 10)           | ~0.2–0.5 ms   |
-| Metadata fetch (10 items via Range)    | ~30–80 ms     |
+| Component                               | Samples     | Mean (ms)   |
+|-----------------------------------------|-------------|-------------|
+| Load & upload vector shards to GPU *    |   Approx    | ~1400-2000  |              
+| TF-IDF vectorization of query           |   46935     | 0.01        |
+| GPU similarity compute (90k × 1000 fp32)|     10      | 198.29      |
+| Extract compute result and sort         |      77     | 75          |
+| Fetch result to static page (K = 10)*   |      22     | 23          |
+
+Note:
+*Involves fetch to static page, subject to network latency. 
 
 
 ## Limitations

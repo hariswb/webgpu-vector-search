@@ -19,7 +19,7 @@ export default function App() {
   // 1. INIT PIPELINE ON MOUNT
   // -------------------------
   useEffect(() => {
-    const pipeline = new VectorSearchPipeline(PIPELINE_URL, TOP_K);
+    const pipeline = new VectorSearchPipeline(PIPELINE_URL);
     pipelineRef.current = pipeline;
 
     pipeline
@@ -58,13 +58,13 @@ export default function App() {
       const pipeline = pipelineRef.current;
 
       try {
-        const globalIdxList = await pipeline.compute(debouncedQuery);
+        const globalIdxList = await pipeline.search(debouncedQuery);
         const newStream = new DataIndexStream(globalIdxList);
 
         // take first 10 indexes
         const firstChunk = newStream.next(10);
 
-        const firstMetadata = await pipeline.getResults(firstChunk);
+        const firstMetadata = await pipeline.fetchData(firstChunk);
 
         setStream(newStream);
         setResults(firstMetadata);
@@ -87,7 +87,7 @@ export default function App() {
 
     const pipeline = pipelineRef.current;
     const nextIdx = stream.next(10);
-    const moreMetadata = await pipeline.getResults(nextIdx);
+    const moreMetadata = await pipeline.fetchData(nextIdx);
 
     setResults((prev) => [...prev, ...moreMetadata]);
   };

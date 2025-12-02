@@ -1,9 +1,15 @@
 import { MetadataObject, StoreGithubPage } from "./stores/storeGithubPage";
 import { GpuSimilarityEngine } from "./gpu/engine";
 import { QueryVectorizer } from "./utils/tfIdf";
-import { ShardRecord } from "./gpu/types";
+import { ShardRecord, ShardScores, VecScore } from "./gpu/types";
 
-export interface SortedSearchResult {
+export interface ShardComputedScores {
+  shardIndex: number;
+  rawScores: Float32Array;
+  count: number;
+}
+
+export interface VectorScore {
   globalIndex: number;
   score: number;
 }
@@ -41,6 +47,7 @@ export class VectorSearchPipeline {
     await this.gpu.init();
 
     // Create buffer records
+    // Keep shard starting index
     let globalIdx = 0;
     for (let i = 0; i < manifest.shards.length; i++) {
       const shardInfo = manifest.shards[i];
@@ -80,59 +87,84 @@ export class VectorSearchPipeline {
     }
   }
 
-  async getResults(sortedSearchIdx: number[]): Promise<MetadataObject[]> {
-    const titles = await this.store.fetchMetadataBatch(sortedSearchIdx);
+  async search(query: string): Promise<VectorScore[]> {
+    // Stage 1 — Compute GPU in parallel
+    const shardOutputs = await this.computeShardScores(query);
+
+    const globalResults: VectorScore[] = [];
+
+    // Stage 2 & 3 per shard — can be parallelized with Promise.all if desired
+    for (const out of shardOutputs) {
+      const shardScores = await this.extractShardScores(out);
+      const global = await this.reassignScoresToGlobalIndex(shardScores);
+      globalResults.push(...global);
+    }
+
+    return globalResults.sort((a, b) => b.score - a.score);
+  }
+
+  async computeShardScores(query: string): Promise<ShardComputedScores[]> {
+    if (!this.gpu || !this.queryVectorizer)
+      throw new Error("Pipeline not initialized");
+
+    const qvec = this.queryVectorizer.vectorize(query);
+    const outputs: ShardComputedScores[] = [];
+
+    for (const [shardIndex, shardRec] of this.gpu.shardRecords.entries()) {
+      const rawScores = await this.gpu.computeShard(shardRec, qvec);
+      outputs.push({
+        shardIndex,
+        rawScores,
+        count: shardRec.count,
+      });
+    }
+
+    return outputs;
+  }
+
+  async extractShardScores(input: ShardComputedScores): Promise<ShardScores> {
+    const { shardIndex, rawScores, count } = input;
+
+    const scored: VecScore[] = new Array(count);
+    for (let i = 0; i < count; i++) {
+      scored[i] = { idx: i, score: rawScores[i] };
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+
+    return {
+      shardIdx: shardIndex,
+      scores: scored,
+    };
+  }
+
+  async reassignScoresToGlobalIndex(
+    shardResult: ShardScores
+  ): Promise<VectorScore[]> {
+    const start = this.shardStartIdxMap.get(shardResult.shardIdx) ?? 0;
+    return shardResult.scores.map((it) => ({
+      globalIndex: start + it.idx,
+      score: it.score,
+    }));
+  }
+
+  async fetchData(vectorScores: VectorScore[]): Promise<MetadataObject[]> {
+    const titles = await this.store.fetchMetadataBatch(vectorScores.map(v=>v.globalIndex));
     return titles;
   }
 
-  async compute(query: string): Promise<number[]> {
-    if (!this.gpu || !this.store || !this.queryVectorizer) {
-      throw new Error("Pipeline not initialized");
-    }
-
-    const qvec = this.queryVectorizer.vectorize(query);
-
-    const globalResults: SortedSearchResult[] = [];
-
-    for (let i = 0; i < this.gpu.shardRecords.size; i++) {
-      const shardRec = this.gpu.shardRecords.get(i);
-
-      if (!shardRec) break;
-
-      const shardScores = await this.gpu.computeTopKFromShard(
-        shardRec.shardIndex,
-        qvec,
-        shardRec.count
-      );
-
-      const shardStartIdx = this.shardStartIdxMap.get(shardRec.shardIndex);
-      if (shardStartIdx) {
-        for (const score of shardScores.scores) {
-          globalResults.push({
-            globalIndex: shardStartIdx + score.idx,
-            score: score.score,
-          });
-        }
-      }
-    }
-
-    return globalResults
-      .sort((a, b) => b.score - a.score)
-      .map((o) => o.globalIndex);
-  }
-
-  async cleanUp(){
-    await this.gpu?.destroyBuffers()
-    this.gpu = null
+  async cleanUp() {
+    await this.gpu?.destroyBuffers();
+    this.gpu = null;
   }
 }
 
 export class DataIndexStream {
   private index = 0;
 
-  constructor(private data: number[]) {}
+  constructor(private data: VectorScore[]) {}
 
-  next(k: number): number[] {
+  next(k: number): VectorScore[] {
     const slice = this.data.slice(this.index, this.index + k);
     this.index += slice.length; // do NOT exceed bounds
     return slice;

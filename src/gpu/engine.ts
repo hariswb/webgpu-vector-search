@@ -284,35 +284,7 @@ export class GpuSimilarityEngine {
     outBuffer.destroy();
 
     return scores;
-  }
-
-  async computeTopKFromShard(
-    shardIdx: number,
-    query: Float32Array,
-    topK: number
-  ): Promise<ShardScores> {
-    const shardRec = this.shardRecords.get(shardIdx);
-    if (!shardRec) {
-      throw new ErrorWebGPUCompute(`Shard ${shardIdx} not found.`);
-    }
-
-    const result = await this.computeShard(shardRec, query);
-
-    const scored: VecScore[] = new Array(shardRec.count);
-
-    for (let i = 0; i < shardRec.count; i++) {
-      scored[i] = { idx: i, score: result[i] };
-    }
-
-    scored.sort((a, b) => b.score - a.score);
-
-    const top = scored.slice(0, topK);
-
-    return {
-      shardIdx: shardIdx,
-      scores: top,
-    };
-  }
+  } 
 
   async destroyBuffers() {
     for (const [key, record] of this.shardRecords.entries()) {
