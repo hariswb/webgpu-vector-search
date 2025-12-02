@@ -158,9 +158,9 @@ flowchart TD
 ```
 
 
-### Flow Overview (Bullet Points)
+### Flow Overview
 - The UI loads and initializes the WebGPU engine
-- Vector shards (.f32) are fetched once and uploaded to persistent GPU buffers
+- Vector shards `.f32` are fetched once and uploaded to persistent GPU buffers
 - Metadata index + JSONL are prepared for ranged fetching
 - User enters a search query
 - The query is vectorized on CPU using the same TF-IDF vocabulary
@@ -286,7 +286,7 @@ HTTP Range Requests
 
 Why Range Requests Help in This Demo
 - GitHub Pages cannot serve dynamic APIs
-- Metadata file can be large (MBs)
+- Metadata file can be large (hundred of MBs)
 - Fetching only 10–20 records makes the UI feel instant
 - Works well with static hosting environments
 
@@ -308,6 +308,7 @@ Note:
 
 ## Limitations
 
+Limitations in this demo:
 - Static data only (no live updates)
 - TF-IDF vectors may not capture semantic meaning as well as embeddings
 - Requires a browser with WebGPU enabled
@@ -325,4 +326,3 @@ Thanks to sh1zuka for the 90k Indonesian datasets
 ## License
 
 MIT License
-
