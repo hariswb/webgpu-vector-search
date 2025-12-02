@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { playwright } from "@vitest/browser-playwright";
 
 export default defineConfig({
-  base: '/webgpu-vector-search-indo-news/',
+  base: '/webgpu-vector-search/',
   server: {
     port: 5173,
   },
