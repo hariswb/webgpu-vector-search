@@ -47,7 +47,8 @@ It works as follows:
 - The client fetch the highest scoring row, K entries at a time, with `http range request` to the static page.
 
 ## Compute Pipeline Architecture
-Diagram
+
+Checkout `src/pipeline.ts`.
 
 ```mermaid
 %%{init: {
@@ -137,7 +138,7 @@ WebGPU engine is responsible for:
   - `readbackBuffer`
   - `outputBuffer`
 
-The vector shards can be large (32Mb). The pipeline should pass them to the buffers only once at the pipeline initialization. The engine uses `mappedAtCreation: true` for persistency.
+The vector shard can be large (32Mb each) and each buffer load uses resources and contribute to latency. The pipeline passes them to `vectorShardBuffers[]` only once at the pipeline initialization. The engine uses `mappedAtCreation: true` for their persistency in GPU.
 
 Checkout `src/gpu/engine.ts`.
 
