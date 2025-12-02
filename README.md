@@ -1,8 +1,10 @@
 # Vector Similarity Search in the Browser (WebGPU)
 
-## Introduction
+This project demonstrates a **client-side vector similarity search engine** running in the browser using WebGPU.
 
-This project demonstrates a **client-side vector similarity search engine** running entirely in the browser using WebGPU.
+Given 90k rows CSV (300+Mb) dataset of Indonesian news (2024-2025), the user is able to query all news titles and get best the best matches based on vector-similarity search.  
+
+## Static Data Store In Github Page
 
 The dataset used in this demo contains rows of Indonesian news data:
 - title
@@ -12,72 +14,37 @@ The dataset used in this demo contains rows of Indonesian news data:
 
 For this demo, only the title field is vectorized.
 
-The titles are converted into high-dimensional vectors using **TF-IDF** (Term Frequency–Inverse Document Frequency).
-This produces sparse but meaningful numerical vectors representing the text content.
+Each of news title is represented as `1000 dimension` vector by Scikit Learn's **TF-IDF** (Term Frequency–Inverse Document Frequency).
+This produces sparse but meaningful numerical vectors representing the text title. The vectors are normalized for easier computation.
 
 These precomputed vectors are then:
-- sharded into multiple `.f32` binary files
-- loaded into GPU buffers inside the browser
-- used for cosine similarity computation between the user’s search query and all news titles
+- Sharded into few `.f32` binary files
+- Stored in static Github page. Along with other data:
+  - `manifest.json`: Describes vector shards' dimensions, count, and size.
+  - `metadata.jsonl`: JSON Lines copy of the CSV dataset.
+  - `metadata.index`: Map of `dataset row index` to `jsonl byte offset`. 
+  - `vocab.json` and `idf.32`: Vocab and TF-IDF's model to vectorize client-side's query.
 
-The entire similarity search runs inside the browser with WebGPU, without a backend server.
+Vector Sharding & Format
+- Vectors are stored as `float32` shards
+- Vector dimension: 1000
+- Shards of ~8k vectors per file
+- Layout: row-major contiguous float32 arrays
+- File extension: `.f32`
 
+Checkout the repository for the static data here: [https://github.com/hariswb/indonesian-news-2024-2025](https://github.com/hariswb/indonesian-news-2024-2025)
 
-## Motivation
+## Client-side WebGPU Compute Shader Pipeline
 
-Running vector search on the CPU in the client is possible, but becomes slow as the dataset grows:
-- Computing similarity against tens of thousands of vectors, in this case 90k rows
-- Repeatedly processing 1000-dimensional vectors
-- Sorting and ranking results
+It works as follows:
+- User opens the client [https://hariswb.github.io/webgpu-vector-search/](https://hariswb.github.io/webgpu-vector-search/).
+- The pipeline load the vector shards and pass them into WebGPU buffers. This is done once at the initialization.
+- The pipeline vectorize the user's search query into `1000 dimension` vector. 
+- The pipeline computes the query vector against all vector shards. Then, it will output the scores.   
+- The scores are sorted and remapped to the dataset indexes.
+- The client fetch the highest scoring row, K entries at a time, with `http range request` to the static page.
 
-Executing these operations on the CPU would noticeably block the UI.
-
-WebGPU allows these computations to run massively in parallel, giving:
-- Much higher throughput
-- Smoother UI
-- Ability to scale to larger datasets
-
-This project explores how client-side vector search using GPU-accelerated compute shaders work and pointing out the limitations.
-
-## Challenges
-### Loading Large Vector Shards
-
-**Challenge:**
-Compute shaders are extremely fast, but loading large vector shards on demand introduces noticeable latency.
-
-**Solution:**
-All vector shards are fetched once at initial load and stored permanently in WebGPU buffers, similar to loading meshes in a WebGL/3D engine.
-
-This ensures each search query runs without any network delay.
-
-### Data Fetching After Similarity Search
-
-**Challenge:**
-After computing similarity and ranking top-K indices, we still need to fetch actual data (title, content, link). We are using static github page for this demo, so index search is out of question. Fetching full JSON chunk upfront and filter the result for the desired indices is very slow.
-
-**Solution:**
-Use HTTP Range Requests to fetch only the lines relating to the selected top-K documents from a static site.
-Combined with the `.index` file, the browser fetches precise byte offsets instead of the entire metadata file.
-
-### Other Technical Challenges
-
-- WebGPU requires careful buffer lifetime management
-- Sharding must align with GPU-friendly sizes
-- Precision differences between CPU TF-IDF and GPU computation
-- Efficient K-top ranking on the CPU after GPU computation
-- Maintaining good user experience despite static-hosting constraints
-
-## Features
-
-Users can:
-- Type a search query into the UI
-- Automatically generate a TF-IDF vector from that query
-- Run WebGPU-accelerated similarity search against all news title vectors
-- View top-K most similar news items
-- Lazy-load metadata (title, date, link) via byte-range queries
-- Interact with a responsive and fast search experience
-
-## Architecture
+# Compute Pipeline Architecture
 Diagram
 
 ```mermaid
@@ -157,142 +124,78 @@ flowchart TD
     Pipeline --> Hosting
 ```
 
+As the client React app is initialized and the dataset manifest is fetched, the compute pipeline is created. It runs a series of processes:
 
-### Flow Overview
-- The UI loads and initializes the WebGPU engine
-- Vector shards `.f32` are fetched once and uploaded to persistent GPU buffers
-- Metadata index + JSONL are prepared for ranged fetching
-- User enters a search query
-- The query is vectorized on CPU using the same TF-IDF vocabulary
-- GPU compute shader calculates cosine similarity against all vector shards
-- Results are read back to CPU
-- CPU performs top-K ranking
-- UI fetches only needed metadata via HTTP range requests
-- UI displays results
+## Initial Buffers
+WebGPU engine is responsible for:
+- Allocating buffers at initialization:
+  - `paramsBuffer`: `dimension` and `count` of vectors in each shards.
+  - `queryBuffer`: `Float32Array` of vectorized search query.
+  - `vectorShardBuffers[]`: Vector shard buffers. Each shard has 8k vectors. 
+  - `readbackBuffer`
+  - `outputBuffer`
 
-### Repositories Overview
+The vector shards can be large (32Mb). The pipeline should pass them to the buffers only once at the pipeline initialization. The engine uses `mappedAtCreation: true` for persistency.
 
-There are two repositories involved:
+Checkout `src/gpu/engine.ts`.
 
-#### I. Static Data Generation
+## Computation
+When the pipeline is initialized, it's ready to accept user's search query. 
 
-https://github.com/hariswb/indonesian-news-2024-2025
-
-This repo contains the Jupyter notebooks and data pipeline responsible for:
-- Cleaning and preprocessing the news dataset
-- TF-IDF vectorization of the title field
-- Vector normalization
-- Vector sharding into .f32 binary files
-- Creating metadata.jsonl
-- Creating metadata.index (byte offsets for each line)
-- Generating manifest.json (describes all data files, dimensions, shard sizes)
-- Publishing the static data to GitHub Pages
-
-This repository is used solely for preparing data for the WebGPU client.
-
-#### II. Client Side Vector Similarity Pipeline
-
-(This repository)
-
-A Vite + React application for UI and custom pipeline with GPU-accelerated vector search implementation.
-
-### Workflow Overview
-#### App Initialization
-- The app loads the manifest
-- All vector shard .f32 files are downloaded
-- Shards are uploaded into persistent WebGPU buffers
-- Metadata index is loaded
-- The search UI becomes interactive
-
-#### Vector Sharding & Format
-- Vectors are stored as:
-- `float32`
-- dimension: 1000
-- shards of ~8k vectors per file
-- layout: row-major contiguous float32 arrays
-- file extension: `.f32`
-
-This format is chosen because:
-- directly compatible with GPU storage buffers
-- very fast to upload
-- fixed-type, zero parsing
-- small enough to be hosted on GitHub Pages
-
-#### Project Structure
-```
-/src
-  ui/
-    App.tsx
-  stores/
-    storeGithubPage.ts
-  gpu/
-    engine.ts
-  test/
-    pipeline.test.ts
-  utils/
-    tfIdf.ts
-  pipeline.ts
-  main.tsx
-```
-
-Notes:
-- Built using Vite
-- UI built in React
-- Uses a custom data pipeline for loading vector shards and metadata
-- Uses Vitest for testing pipeline logic
-
-#### GPU Engine
-
-The GPU engine is responsible for:
-- Initialization
-- Creating GPU device, queues
-- Allocating buffers:
-    - paramsBuffer
-    - queryBuffer
-    - vectorShardBuffers[]
-    - outputBuffer
-    - readbackBuffer
-
-- Vector shard buffers use `mappedAtCreation: true` for persistent mapping
-- Shards remain GPU-resident for the lifecycle of the app
-
-Computation
-- For each shard:
-- The query vector is uploaded
-- Compute shader runs:
-    - dot product between query and each vector
-    - apply cosine similarity normalization
+For each shard:
+- Search query is vectorized.
+- The query vector is passed to `queryBuffer`.
+- `WebGPU` Compute shader apply dot product for every vector in shard against the query vector. 
+  - Since the vectors are normalized, it only gets the sum.
 - Writes similarity scores to output buffer
 
-Readback
-- After GPU dispatch, scores are copied into readbackBuffer
-- Data is read on CPU and used for ranking
+Here is the compute shader script:
+```wgsl
+struct Params {
+  dim: u32,
+  count: u32
+};
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> query: array<f32>;
+@group(0) @binding(2) var<storage, read> vectors: array<f32>;
+@group(0) @binding(3) var<storage, read_write> out: array<f32>;
 
-K-Top Ranking on CPU
-- CPU receives all similarity scores
-- Performs a partial sort / selection algorithm
-- Produces top-K indices
-- These indices are used for metadata requests
+@compute @workgroup_size(64) fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = gid.x;
+  if (i >= params.count) {
+    return;
+  }
 
-HTTP Range Requests
-- Metadata is stored in:
-    - metadata.jsonl
-    - metadata.index
-- After ranking:
-    - The browser reads byte offsets from the index
-    - Uses HTTP Range Requests to fetch only the specific metadata lines needed
-    - Minimizes network usage
-    - Avoids loading full metadata into memory
+  var sum: f32 = 0.0;
+  let d: u32 = params.dim;
+  let base: u32 = i * d;
+  var k: u32 = 0u;
+  loop {
+    if (k >= d) { break; }
+    sum = sum + query[k] * vectors[base + k];
+    k = k + 1u;
+  }
+  out[i] = sum;
+}
+```
 
-Why Range Requests Help in This Demo
-- GitHub Pages cannot serve dynamic APIs
-- Metadata file can be large (hundred of MBs)
-- Fetching only 10–20 records makes the UI feel instant
-- Works well with static hosting environments
+## Readback
+After GPU dispatch, scores outputted to `outBuffer` and ready to be copied to `readbackBuffer` for CPU to read.
 
-## Performance
+## K-Top Ranking on CPU
+Performs sorting on scores and map them to the shards' indexes.
 
-Using vitest's bench, I test some processes involving the processes in the pipeline. Checkout `src/test/pipeline.bench.ts`.
+## HTTP Range Requests
+
+The copy of original CSV dataset is stored in:
+  - `metadata.jsonl`
+  - `metadata.index`
+
+The client reads the byte offsets from the result indexes and uses HTTP Range Requests to fetch only the specific metadata lines needed. Range Requests is used because Github Page is static and we only need a `K` number of entries at a time.  
+
+# Performance
+
+Using vitest's bench, I test some processes involved in the compute pipeline. Checkout `src/test/pipeline.bench.ts`.
 
 | Component                               | Samples     | Mean (ms)   |
 |-----------------------------------------|-------------|-------------|
@@ -305,16 +208,16 @@ Using vitest's bench, I test some processes involving the processes in the pipel
 Note:
 *Involves fetch to static page, subject to network latency. 
 
-
-## Limitations
+# Limitations
 
 Limitations in this demo:
 - Static data only (no live updates)
 - TF-IDF vectors may not capture semantic meaning as well as embeddings
 - Requires a browser with WebGPU enabled
+- Cannot filter results in the static github page side
 - Not optimized for extremely large datasets (>1M vectors)
 
-## Credits
+# Credits
 WebGPU explainers:
 - https://gpuweb.github.io/gpuweb/explainer/
 - https://webgpufundamentals.org/webgpu/lessons/webgpu-fundamentals.html
@@ -323,6 +226,6 @@ Dataset:
 Thanks to sh1zuka for the 90k Indonesian datasets
 - https://www.kaggle.com/datasets/sh1zuka/indonesia-news-dataset-2024
 
-## License
+# License
 
 MIT License
