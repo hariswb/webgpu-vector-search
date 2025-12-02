@@ -1,10 +1,12 @@
 # Vector Similarity Search in the Browser (WebGPU)
 
+## Introduction
+
 This project demonstrates a **client-side vector similarity search engine** running in the browser using WebGPU.
 
 Given 90k rows CSV (300+Mb) dataset of Indonesian news (2024-2025), the user is able to query all news titles and get best the best matches based on vector-similarity search.  
 
-## Static Data Store In Github Page
+### Static Data Store In Github Page
 
 The dataset used in this demo contains rows of Indonesian news data:
 - title
@@ -34,7 +36,7 @@ Vector Sharding & Format
 
 Checkout the repository for the static data here: [https://github.com/hariswb/indonesian-news-2024-2025](https://github.com/hariswb/indonesian-news-2024-2025)
 
-## Client-side WebGPU Compute Shader Pipeline
+### Client-side WebGPU Compute Shader Pipeline
 
 It works as follows:
 - User opens the client [https://hariswb.github.io/webgpu-vector-search/](https://hariswb.github.io/webgpu-vector-search/).
@@ -44,7 +46,7 @@ It works as follows:
 - The scores are sorted and remapped to the dataset indexes.
 - The client fetch the highest scoring row, K entries at a time, with `http range request` to the static page.
 
-# Compute Pipeline Architecture
+## Compute Pipeline Architecture
 Diagram
 
 ```mermaid
@@ -126,7 +128,7 @@ flowchart TD
 
 As the client React app is initialized and the dataset manifest is fetched, the compute pipeline is created. It runs a series of processes:
 
-## Initial Buffers
+### Initial Buffers
 WebGPU engine is responsible for:
 - Allocating buffers at initialization:
   - `paramsBuffer`: `dimension` and `count` of vectors in each shards.
@@ -139,7 +141,7 @@ The vector shards can be large (32Mb). The pipeline should pass them to the buff
 
 Checkout `src/gpu/engine.ts`.
 
-## Computation
+### Computation
 When the pipeline is initialized, it's ready to accept user's search query. 
 
 For each shard:
@@ -179,13 +181,13 @@ struct Params {
 }
 ```
 
-## Readback
+### Readback
 After GPU dispatch, scores outputted to `outBuffer` and ready to be copied to `readbackBuffer` for CPU to read.
 
-## K-Top Ranking on CPU
+### K-Top Ranking on CPU
 Performs sorting on scores and map them to the shards' indexes.
 
-## HTTP Range Requests
+### HTTP Range Requests
 
 The copy of original CSV dataset is stored in:
   - `metadata.jsonl`
@@ -193,7 +195,7 @@ The copy of original CSV dataset is stored in:
 
 The client reads the byte offsets from the result indexes and uses HTTP Range Requests to fetch only the specific metadata lines needed. Range Requests is used because Github Page is static and we only need a `K` number of entries at a time.  
 
-# Performance
+## Performance
 
 Using vitest's bench, I test some processes involved in the compute pipeline. Checkout `src/test/pipeline.bench.ts`.
 
@@ -208,7 +210,7 @@ Using vitest's bench, I test some processes involved in the compute pipeline. Ch
 Note:
 *Involves fetch to static page, subject to network latency. 
 
-# Limitations
+## Limitations
 
 Limitations in this demo:
 - Static data only (no live updates)
@@ -217,7 +219,7 @@ Limitations in this demo:
 - Cannot filter results in the static github page side
 - Not optimized for extremely large datasets (>1M vectors)
 
-# Credits
+## Credits
 WebGPU explainers:
 - https://gpuweb.github.io/gpuweb/explainer/
 - https://webgpufundamentals.org/webgpu/lessons/webgpu-fundamentals.html
@@ -226,6 +228,6 @@ Dataset:
 Thanks to sh1zuka for the 90k Indonesian datasets
 - https://www.kaggle.com/datasets/sh1zuka/indonesia-news-dataset-2024
 
-# License
+## License
 
 MIT License
