@@ -1,5 +1,5 @@
 {
-  "name": "webgpu-vector-client",
+  "name": "webgpu-vector-search",
   "author": "hariswb",
   "license": "MIT",
   "version": "0.0.1",
@@ -12,6 +12,7 @@
     "bench": "vitest bench"
   },
   "dependencies": {
+    "framer-motion": "^12.23.25",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

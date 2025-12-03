@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { VectorSearchPipeline, DataIndexStream } from "../pipeline"; // adjust path
+import LoadingCircle from "./components/loading";
 
-const PIPELINE_URL = "https://hariswb.github.io/indonesian-news-2024-2025"
-const TOP_K = 200;
+const PIPELINE_URL = "https://hariswb.github.io/indonesian-news-2024-2025";
 
 export default function App() {
   const pipelineRef = useRef<VectorSearchPipeline | null>(null);
@@ -15,9 +15,7 @@ export default function App() {
   const [stream, setStream] = useState<DataIndexStream | null>(null);
   const [results, setResults] = useState<any[]>([]); // metadata objects
 
-  // -------------------------
   // 1. INIT PIPELINE ON MOUNT
-  // -------------------------
   useEffect(() => {
     const pipeline = new VectorSearchPipeline(PIPELINE_URL);
     pipelineRef.current = pipeline;
@@ -34,17 +32,13 @@ export default function App() {
       .catch((e) => console.error("Pipeline init error:", e));
   }, []);
 
-  // -------------------------
-  // 2. DEBOUNCE QUERY (1 sec)
-  // -------------------------
+  // 2. DEBOUNCE QUERY
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query.trim()), 1000);
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 500);
     return () => clearTimeout(t);
   }, [query]);
 
-  // -------------------------
   // 3. RUN COMPUTE WHEN DEBOUNCED QUERY CHANGES
-  // -------------------------
   useEffect(() => {
     const run = async () => {
       if (!debouncedQuery || !pipelineRef.current) {
@@ -78,9 +72,7 @@ export default function App() {
     run();
   }, [debouncedQuery]);
 
-  // -------------------------
   // 4. LOAD MORE RESULTS
-  // -------------------------
   const loadMore = async () => {
     if (!stream || !pipelineRef.current) return;
     if (!stream.hasMore()) return;
@@ -92,14 +84,15 @@ export default function App() {
     setResults((prev) => [...prev, ...moreMetadata]);
   };
 
-  // -------------------------
   // UI RENDERING
-  // -------------------------
 
   if (!isReady) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-700 text-xl">
-        Initializing WebGPU pipeline...
+      <div className="min-h-screen flex flex-col items-center justify-center text-gray-700 text-xl">
+        <div>Initializing WebGPU pipeline...</div>
+        <div>
+          <LoadingCircle />
+        </div>
       </div>
     );
   }
@@ -113,7 +106,7 @@ export default function App() {
         <div className="flex items-center gap-3">
           <input
             type="text"
-            placeholder="Search article titles..."
+            placeholder="Search news super fast..."
             className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -121,13 +114,36 @@ export default function App() {
         </div>
 
         {isLoadingQuery && (
-          <div className="text-gray-500 italic mt-4">Computing similarity...</div>
+          <div className="flex flex-col justify-center">
+            <div className="text-gray-500 italic mt-4">
+              Computing similarity...
+            </div>
+            <LoadingCircle />
+          </div>
         )}
 
         {/* Empty */}
         {!query.trim() && (
-          <div className="p-4 text-center text-gray-500 italic">
-            Find news with WebGPU
+          <div className="flex flex-col justify-center p-4 text-gray-500 italic">
+            <p className="text-left ">
+              Search within 90k Indonesian news dataset<br></br>
+              between January 2024 - 23 October 2025 <br></br>
+              <br></br>
+              Example query:<br></br>
+              1. Mitigasi bencana <br></br>
+              2. Minyak goreng <br></br>
+              3. Demonstrasi rusuh
+            </p>
+            <br></br>
+            <p>
+              <a
+                target="_blank"
+                href="https://github.com/hariswb/webgpu-vector-search"
+              >
+                <span className="text-blue-400 underline">
+              Github Repository</span>
+              </a>
+            </p>
           </div>
         )}
 
@@ -135,22 +151,23 @@ export default function App() {
         {results.length > 0 && (
           <div className="space-y-3">
             {results.map((item, i) => (
-              <div key={i} className="p-4 bg-white rounded-xl shadow">
-                <div className="font-semibold">{item.title}</div>
-                <div className="text-sm text-gray-600">{item.date}</div>
-                <a
-                  href={item.url}
-                  target="_blank"
-                  className="text-blue-600 underline text-sm"
-                >
-                  View article
-                </a>
-              </div>
+              <div>
+              <a
+                href={item.url}
+                target="_blank"
+                className="cursor-pointer"
+              >
+                <div key={i} className="p-4 bg-white rounded-md border border-blue-200 hover:border-blue-400 hover:bg-blue-50">
+                  <div className="font-semibold">{item.title}</div>
+                  <div className="text-sm text-gray-600">{item.date}</div>
+                </div>
+              </a>
+</div>
             ))}
 
             {stream && stream.hasMore() && (
               <button
-                className="w-full p-3 bg-blue-600 text-white rounded-lg text-center mt-4"
+                className="w-full p-3 bg-sky-600 text-white rounded-lg text-center mt-4 hover:cursor-pointer hover:bg-sky-800"
                 onClick={loadMore}
               >
                 Load more results
@@ -160,9 +177,7 @@ export default function App() {
         )}
 
         {!isLoadingQuery && query.trim() && results.length === 0 && (
-          <div className="p-4 text-center text-gray-500">
-            No results found.
-          </div>
+          <div className="p-4 text-center text-gray-500">No results found.</div>
         )}
       </div>
     </div>
