@@ -25,16 +25,14 @@ export class GpuSimilarityEngine {
     this.maxShardCount = maxShardCount;
   }
 
-  isWebGPUAvailable(): boolean {
-    return (
-      typeof navigator !== "undefined" &&
-      "gpu" in navigator &&
-      navigator.gpu !== undefined
-    );
-  }
-
   async init(): Promise<void> {
-    if (!this.isWebGPUAvailable()) {
+    if (
+      !(
+        typeof navigator !== "undefined" &&
+        "gpu" in navigator &&
+        navigator.gpu !== undefined
+      )
+    ) {
       throw new ErrorWebGPUNotSupported(
         "WebGPU not supported in this browser."
       );
