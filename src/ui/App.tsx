@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { VectorSearchPipeline, DataIndexStream } from "../pipeline"; // adjust path
+import {
+  VectorSearchPipeline,
+  DataIndexStream,
+  PipelineStatus,
+} from "../pipeline"; // adjust path
 import LoadingCircle from "./components/loading";
 
 const PIPELINE_URL = "https://hariswb.github.io/indonesian-news-2024-2025";
@@ -7,7 +11,9 @@ const PIPELINE_URL = "https://hariswb.github.io/indonesian-news-2024-2025";
 export default function App() {
   const pipelineRef = useRef<VectorSearchPipeline | null>(null);
 
-  const [isReady, setIsReady] = useState(false);
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus>(
+    PipelineStatus.NotReady
+  );
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [isLoadingQuery, setIsLoadingQuery] = useState(false);
@@ -24,12 +30,16 @@ export default function App() {
       .init()
       .then(() => {
         const checkReady = () => {
-          if (pipeline.isReady()) setIsReady(true);
-          else setTimeout(checkReady, 300);
+          setPipelineStatus(pipeline.status);
+          if (pipeline.status !== PipelineStatus.NotReady) return;
+          setTimeout(checkReady, 300);
         };
         checkReady();
       })
-      .catch((e) => console.error("Pipeline init error:", e));
+      .catch((e) => {
+        console.error("Pipeline init error:", e);
+        setPipelineStatus(PipelineStatus.WebGPUNotSupported);
+      });
   }, []);
 
   // 2. DEBOUNCE QUERY
@@ -85,8 +95,25 @@ export default function App() {
   };
 
   // UI RENDERING
+  if (pipelineStatus === PipelineStatus.WebGPUNotSupported) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center text-red-700 p-8 text-center">
+        <h2 className="text-2xl font-bold mb-4">WebGPU Not Supported</h2>
+        <p className="mb-4">
+          This application requires WebGPU to run. Your browser does not support
+          WebGPU or it is currently disabled.
+        </p>
 
-  if (!isReady) {
+        <p className="text-gray-600">
+          Please enable WebGPU in your browser or try using the latest version
+          of Chrome, Edge, or any Chromium-based browser with WebGPU enabled.
+        </p>
+      </div>
+    );
+  }
+
+  // 2) NOT READY YET
+  if (pipelineStatus === PipelineStatus.NotReady) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center text-gray-700 text-xl">
         <div>Initializing WebGPU pipeline...</div>
@@ -141,7 +168,8 @@ export default function App() {
                 href="https://github.com/hariswb/webgpu-vector-search"
               >
                 <span className="text-blue-400 underline">
-              Github Repository</span>
+                  Github Repository
+                </span>
               </a>
             </p>
           </div>
@@ -152,17 +180,16 @@ export default function App() {
           <div className="space-y-3">
             {results.map((item, i) => (
               <div>
-              <a
-                href={item.url}
-                target="_blank"
-                className="cursor-pointer"
-              >
-                <div key={i} className="p-4 bg-white rounded-md border border-blue-200 hover:border-blue-400 hover:bg-blue-50">
-                  <div className="font-semibold">{item.title}</div>
-                  <div className="text-sm text-gray-600">{item.date}</div>
-                </div>
-              </a>
-</div>
+                <a href={item.url} target="_blank" className="cursor-pointer">
+                  <div
+                    key={i}
+                    className="p-4 bg-white rounded-md border border-blue-200 hover:border-blue-400 hover:bg-blue-50"
+                  >
+                    <div className="font-semibold">{item.title}</div>
+                    <div className="text-sm text-gray-600">{item.date}</div>
+                  </div>
+                </a>
+              </div>
             ))}
 
             {stream && stream.hasMore() && (

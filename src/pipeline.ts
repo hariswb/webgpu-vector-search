@@ -2,6 +2,7 @@ import { MetadataObject, StoreGithubPage } from "./stores/storeGithubPage";
 import { GpuSimilarityEngine } from "./gpu/engine";
 import { QueryVectorizer } from "./utils/tfIdf";
 import { ShardRecord, ShardScores, VecScore } from "./gpu/types";
+import { ErrorWebGPUNotSupported } from "./gpu/errors";
 
 export interface ShardComputedScores {
   shardIndex: number;
@@ -14,7 +15,14 @@ export interface VectorScore {
   score: number;
 }
 
+export enum PipelineStatus {
+  Ready,
+  NotReady,
+  WebGPUNotSupported,
+}
+
 export class VectorSearchPipeline {
+  public status: PipelineStatus = PipelineStatus.NotReady;
   private storeUrl: string;
 
   private store: StoreGithubPage;
@@ -32,58 +40,67 @@ export class VectorSearchPipeline {
   }
 
   async init() {
-    // Init Store
-    await this.store.loadManifest();
-    await this.store.loadMetadataIndex();
-    const manifest = this.store.getManifest();
-
-    const dim = manifest.dim;
-    const maxShardCount = Math.max(
-      ...manifest.shards.map((shard) => shard.count)
-    );
-
-    // Init WebGPU Engine
-    this.gpu = new GpuSimilarityEngine(maxShardCount, dim);
-    await this.gpu.init();
-
-    // Create buffer records
-    // Keep shard starting index
-    let globalIdx = 0;
-    for (let i = 0; i < manifest.shards.length; i++) {
-      const shardInfo = manifest.shards[i];
-      const vectors = await this.store.loadShard(i); // Float32Array
-      await this.gpu.createBufferRecord(
-        i,
-        vectors,
-        manifest.dim,
-        shardInfo.count
-      );
-      this.shardStartIdxMap.set(i, globalIdx);
-      globalIdx += shardInfo.count;
-    }
-
-    // Init Query Vectorizer
-    const vocab = await this.store.loadVocab();
-    const idf = await this.store.loadIdf();
-    const stopwords = await this.store.loadStopwords();
-    const acronymDict = await this.store.loadAcronyms();
-
-    this.queryVectorizer = new QueryVectorizer(
-      vocab,
-      idf,
-      acronymDict,
-      stopwords
-    );
-  }
-
-  isReady(): boolean {
     try {
-      if (!this.store.getManifest()) return false;
-      if (!this.gpu?.shardRecords) return false;
-      if (!this.queryVectorizer) return false;
-      return true;
+      // Init Store
+      await this.store.loadManifest();
+      await this.store.loadMetadataIndex();
+      const manifest = this.store.getManifest();
+
+      const dim = manifest.dim;
+      const maxShardCount = Math.max(
+        ...manifest.shards.map((shard) => shard.count)
+      );
+
+      // Init WebGPU Engine
+      this.gpu = new GpuSimilarityEngine(maxShardCount, dim);
+      await this.gpu.init();
+
+      // Create buffer records
+      // Keep shard starting index
+      let globalIdx = 0;
+      for (let i = 0; i < manifest.shards.length; i++) {
+        const shardInfo = manifest.shards[i];
+        const vectors = await this.store.loadShard(i); // Float32Array
+        await this.gpu.createBufferRecord(
+          i,
+          vectors,
+          manifest.dim,
+          shardInfo.count
+        );
+        this.shardStartIdxMap.set(i, globalIdx);
+        globalIdx += shardInfo.count;
+      }
+
+      // Init Query Vectorizer
+      const vocab = await this.store.loadVocab();
+      const idf = await this.store.loadIdf();
+      const stopwords = await this.store.loadStopwords();
+      const acronymDict = await this.store.loadAcronyms();
+
+      this.queryVectorizer = new QueryVectorizer(
+        vocab,
+        idf,
+        acronymDict,
+        stopwords
+      );
+
+      if (
+        this.store.getManifest() &&
+        this.gpu.shardRecords &&
+        this.queryVectorizer
+      ) {
+        this.status = PipelineStatus.Ready;
+      } else {
+        throw new Error("Pipeline init error");
+      }
     } catch (e) {
-      return false;
+      if (e instanceof ErrorWebGPUNotSupported) {
+        this.status = PipelineStatus.WebGPUNotSupported;
+        return;
+      }
+
+      this.status = PipelineStatus.NotReady;
+      return;
     }
   }
 
@@ -149,7 +166,9 @@ export class VectorSearchPipeline {
   }
 
   async fetchData(vectorScores: VectorScore[]): Promise<MetadataObject[]> {
-    const titles = await this.store.fetchMetadataBatch(vectorScores.map(v=>v.globalIndex));
+    const titles = await this.store.fetchMetadataBatch(
+      vectorScores.map((v) => v.globalIndex)
+    );
     return titles;
   }
 

@@ -6,6 +6,14 @@ export class ErrorWebGPUInit extends Error {
     }
 }
 
+export class ErrorWebGPUNotSupported extends Error {
+    constructor(message: string) {
+        super(message); 
+        this.name = "ErrorWebGPUNotSupported";
+        Object.setPrototypeOf(this, ErrorWebGPUNotSupported.prototype);
+    }
+}
+
 export class ErrorWebGPUBuffer extends Error {
     constructor(message: string) {
         super(message); 

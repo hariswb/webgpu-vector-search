@@ -2,6 +2,7 @@ import {
   ErrorWebGPUBuffer,
   ErrorWebGPUCompute,
   ErrorWebGPUInit,
+  ErrorWebGPUNotSupported,
 } from "./errors";
 
 import { ShardRecord, VecScore, ShardScores } from "./types";
@@ -24,22 +25,34 @@ export class GpuSimilarityEngine {
     this.maxShardCount = maxShardCount;
   }
 
+  isWebGPUAvailable(): boolean {
+    return (
+      typeof navigator !== "undefined" &&
+      "gpu" in navigator &&
+      navigator.gpu !== undefined
+    );
+  }
+
   async init(): Promise<void> {
+    if (!this.isWebGPUAvailable()) {
+      throw new ErrorWebGPUNotSupported(
+        "WebGPU not supported in this browser."
+      );
+    }
+
+    this.adapter = await navigator.gpu.requestAdapter();
+
+    if (!this.adapter)
+      throw new ErrorWebGPUNotSupported("Failed to request GPU adapter.");
+
+    this.device = await this.adapter.requestDevice();
+    if (!this.device)
+      throw new ErrorWebGPUNotSupported("need a browser that supports WebGPU");
+
     if (!this.vecDimension)
       throw new ErrorWebGPUInit("Shards' vector count is null");
     if (!this.maxShardCount)
       throw new ErrorWebGPUInit("Shards' vector dimension is null");
-
-    if (!("gpu" in navigator)) {
-      throw new ErrorWebGPUInit("WebGPU not supported in this browser.");
-    }
-    this.adapter = await navigator.gpu.requestAdapter();
-    if (!this.adapter)
-      throw new ErrorWebGPUInit("Failed to request GPU adapter.");
-
-    this.device = await this.adapter.requestDevice();
-    if (!this.device)
-      throw new ErrorWebGPUInit("need a browser that supports WebGPU");
 
     // Create shader module & pipeline
     const shaderModule = this.device.createShaderModule({
@@ -284,7 +297,7 @@ export class GpuSimilarityEngine {
     outBuffer.destroy();
 
     return scores;
-  } 
+  }
 
   async destroyBuffers() {
     for (const [key, record] of this.shardRecords.entries()) {
