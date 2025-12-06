@@ -6,6 +6,8 @@ This project demonstrates a **client-side vector similarity search engine** runn
 
 Given 90k rows CSV (300+Mb) dataset of Indonesian news (2024-2025), the user is able to query all news titles and get best the best matches based on vector-similarity search.  
 
+![Demo](./webgpu-vector-search-demo.gif)
+
 ### Static Data Store In Github Page
 
 The dataset used in this demo contains rows of Indonesian news data:
