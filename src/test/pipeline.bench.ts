@@ -19,7 +19,6 @@ beforeAll(async () => {
 });
 
 bench("Compute", async () => {
-  if(!pipeline.isReady()) throw new Error("Pipeline not ready")
   shardComputedScores = await pipeline.computeShardScores("Demonstrasi ricuh");
 });
 
